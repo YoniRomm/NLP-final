@@ -2,40 +2,62 @@ import pandas as pd
 
 from jinja2 import Template
 
-template_string = """
-{{serialization}}
-Does this patient have diabetes? Yes or no?
-Answer:
-{{ answer_choices }}
-"""
+from datasets import Dataset, load_dataset
 
-template = Template(template_string)
-answer_choices = "No ||| Yes"
 
-# Replace 'data.csv' with the actual path to your CSV file
-csv_file_path = 'diabetes.csv'
+# template_string = """
+# {{serialization}}
+# Does this patient have diabetes? Yes or no?
+# Answer:
+# {{ answer_choices }}
+# """
+#
+# template = Template(template_string)
+# answer_choices = "No ||| Yes"
 
-# Read the CSV file and create a DataFrame
-data_frame = pd.read_csv(csv_file_path)
 
-# Now you can work with the data in the DataFrame
-print(data_frame.head())  # Display the first few rows of the DataFrame
+# filled_template = template.render(serialization=row_string, answer_choices=answer_choices)
 
-# Initialize an empty list to store the formatted strings
-formatted_strings = []
+def load_data_set(tokenizer):
+    csv_file_path = 'diabetes.csv'
+    data_frame = pd.read_csv(csv_file_path)
+    training_data = data_frame.sample(frac=0.6, random_state=25)
+    other_data = data_frame.drop(training_data.index)
+    eval_data = other_data.sample(frac=0.5, random_state=25)
+    test_data = other_data.drop(eval_data.index)
 
-# Iterate over the rows of the DataFrame
-for index, row in data_frame.iterrows():
-    # Construct the formatted string for the current row
-    row_string = ', '.join([f'{column}: {value}' for column, value in row.items()])
+    return get_tokenized_data(tokenizer, training_data), get_tokenized_data(tokenizer, eval_data), get_text_labels(test_data)
 
-    # Append the formatted string to the list
-    formatted_strings.append(row_string)
 
-    if index == 10:
-        break
+def get_tokenized_data(tokenizer, data_frame):
+    data_set = get_text_labels(data_frame)
 
-# Print the formatted strings
-for row_string in formatted_strings:
-    filled_template = template.render(serialization=row_string, answer_choices=answer_choices)
-    print(filled_template)
+    small_tokenized_dataset = Dataset.from_dict(data_set)
+
+    # You can tokenize the dataset using the tokenizer
+    small_tokenized_dataset = small_tokenized_dataset.map(
+        lambda examples: tokenizer(examples['text'], padding='max_length', truncation=True),
+        batched=True
+    )
+
+    return small_tokenized_dataset
+
+
+def get_text_labels(data_frame):
+    texts = []
+    labels = []
+    for index, row in data_frame.iterrows():
+        # Construct the formatted string for the current row
+        row_string = ', '.join([f'{column}: {value}' for column, value in row.items() if column != "Outcome"])
+
+        texts.append(row_string)
+        labels.append(int(row["Outcome"]))
+
+        if index == 9:
+            break
+    data_set = {
+        'text': texts,
+        'labels': labels,
+    }
+
+    return data_set
